@@ -40,24 +40,15 @@ public class Payment extends Procedure {
   public SQLStmt payUpdateWhseSQL = new SQLStmt(
       "UPDATE " + TPCCConstants.TABLENAME_WAREHOUSE +
       "   SET W_YTD = W_YTD + ? " +
-      " WHERE W_ID = ? ");
-
-  public SQLStmt payGetWhseSQL = new SQLStmt(
-      "SELECT W_STREET_1, W_STREET_2, W_CITY, W_STATE, W_ZIP, W_NAME" +
-      "  FROM " + TPCCConstants.TABLENAME_WAREHOUSE +
-      " WHERE W_ID = ?");
+      " WHERE W_ID = ? " +
+      "RETURNING W_STREET_1, W_STREET_2, W_CITY, W_STATE, W_ZIP, W_NAME");
 
   public SQLStmt payUpdateDistSQL = new SQLStmt(
       "UPDATE " + TPCCConstants.TABLENAME_DISTRICT +
       "   SET D_YTD = D_YTD + ? " +
       " WHERE D_W_ID = ? " +
-      "   AND D_ID = ?");
-
-  public SQLStmt payGetDistSQL = new SQLStmt(
-      "SELECT D_STREET_1, D_STREET_2, D_CITY, D_STATE, D_ZIP, D_NAME" +
-      "  FROM " + TPCCConstants.TABLENAME_DISTRICT +
-      " WHERE D_W_ID = ? " +
-      "   AND D_ID = ?");
+      "   AND D_ID = ? " +
+      " RETURNING D_STREET_1, D_STREET_2, D_CITY, D_STATE, D_ZIP, D_NAME");
 
   public SQLStmt payGetCustSQL = new SQLStmt(
       "SELECT C_FIRST, C_MIDDLE, C_LAST, C_STREET_1, C_STREET_2, " +
@@ -111,9 +102,7 @@ public class Payment extends Procedure {
 
   // Payment Txn
   private PreparedStatement payUpdateWhse = null;
-  private PreparedStatement payGetWhse = null;
   private PreparedStatement payUpdateDist = null;
-  private PreparedStatement payGetDist = null;
   private PreparedStatement payGetCust = null;
   private PreparedStatement payGetCustCdata = null;
   private PreparedStatement payUpdateCustBalCdata = null;
@@ -126,9 +115,7 @@ public class Payment extends Procedure {
                   int terminalDistrictLowerID, int terminalDistrictUpperID,
                   Worker w) throws SQLException {
     payUpdateWhse = this.getPreparedStatement(conn, payUpdateWhseSQL);
-    payGetWhse = this.getPreparedStatement(conn, payGetWhseSQL);
     payUpdateDist = this.getPreparedStatement(conn, payUpdateDistSQL);
-    payGetDist = this.getPreparedStatement(conn, payGetDistSQL);
     payGetCust = this.getPreparedStatement(conn, payGetCustSQL);
     payGetCustCdata = this.getPreparedStatement(conn, payGetCustCdataSQL);
     payUpdateCustBalCdata = this.getPreparedStatement(conn, payUpdateCustBalCdataSQL);
@@ -172,12 +159,7 @@ public class Payment extends Procedure {
     payUpdateWhse.setInt(2, w_id);
     // MySQL reports deadlocks due to lock upgrades:
     // t1: read w_id = x; t2: update w_id = x; t1 update w_id = x
-    int result = payUpdateWhse.executeUpdate();
-    if (result == 0)
-        throw new RuntimeException("W_ID=" + w_id + " not found!");
-
-    payGetWhse.setInt(1, w_id);
-    ResultSet rs = payGetWhse.executeQuery();
+    ResultSet rs = payUpdateWhse.executeQuery();
     if (!rs.next())
         throw new RuntimeException("W_ID=" + w_id + " not found!");
     w_street_1 = rs.getString("W_STREET_1");
@@ -191,15 +173,9 @@ public class Payment extends Procedure {
     payUpdateDist.setDouble(1, paymentAmount);
     payUpdateDist.setInt(2, w_id);
     payUpdateDist.setInt(3, districtID);
-    result = payUpdateDist.executeUpdate();
-    if (result == 0)
-      throw new RuntimeException("D_ID=" + districtID + " D_W_ID=" + w_id + " not found!");
-
-    payGetDist.setInt(1, w_id);
-    payGetDist.setInt(2, districtID);
-    rs = payGetDist.executeQuery();
+    rs = payUpdateDist.executeQuery();
     if (!rs.next())
-        throw new RuntimeException("D_ID=" + districtID + " D_W_ID=" + w_id + " not found!");
+      throw new RuntimeException("D_ID=" + districtID + " D_W_ID=" + w_id + " not found!");
     d_street_1 = rs.getString("D_STREET_1");
     d_street_2 = rs.getString("D_STREET_2");
     d_city = rs.getString("D_CITY");
@@ -235,7 +211,7 @@ public class Payment extends Procedure {
       payUpdateCustBalCdata.setInt(5, customerWarehouseID);
       payUpdateCustBalCdata.setInt(6, customerDistrictID);
       payUpdateCustBalCdata.setInt(7, c.c_id);
-      result = payUpdateCustBalCdata.executeUpdate();
+      int result = payUpdateCustBalCdata.executeUpdate();
 
       if (result == 0)
         throw new RuntimeException("Error in PYMNT Txn updating Customer C_ID=" + c.c_id +
@@ -248,7 +224,7 @@ public class Payment extends Procedure {
       payUpdateCustBal.setInt(4, customerWarehouseID);
       payUpdateCustBal.setInt(5, customerDistrictID);
       payUpdateCustBal.setInt(6, c.c_id);
-      result = payUpdateCustBal.executeUpdate();
+      int result = payUpdateCustBal.executeUpdate();
 
       if (result == 0)
         throw new RuntimeException("C_ID=" + c.c_id + " C_W_ID=" + customerWarehouseID +
