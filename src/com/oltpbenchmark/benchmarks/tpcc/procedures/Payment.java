@@ -59,22 +59,15 @@ public class Payment extends Procedure {
       "   AND C_D_ID = ? " +
       "   AND C_ID = ?");
 
-  public SQLStmt payGetCustCdataSQL = new SQLStmt(
-      "SELECT C_DATA " +
-      "  FROM " + TPCCConstants.TABLENAME_CUSTOMER +
-      " WHERE C_W_ID = ? " +
-      "   AND C_D_ID = ? " +
-      "   AND C_ID = ?");
-
   public SQLStmt payUpdateCustBalCdataSQL = new SQLStmt(
       "UPDATE " + TPCCConstants.TABLENAME_CUSTOMER +
-      "   SET C_BALANCE = ?, " +
-      "       C_YTD_PAYMENT = ?, " +
-      "       C_PAYMENT_CNT = ?, " +
-      "       C_DATA = ? " +
-      " WHERE C_W_ID = ? " +
-      "   AND C_D_ID = ? " +
-      "   AND C_ID = ?");
+      "SET C_BALANCE = ?, " +
+      "    C_YTD_PAYMENT = ?, " +
+      "    C_PAYMENT_CNT = ?, " +
+      "    C_DATA = left(c_id::text || c_d_id::text || c_w_id::text || ?::text || ?::text || ?::text || c_data, 500) " +
+      "WHERE C_W_ID = ? " +
+      "    AND C_D_ID = ? " +
+      "    AND C_ID = ?");
 
   public SQLStmt payUpdateCustBalSQL = new SQLStmt(
       "UPDATE " + TPCCConstants.TABLENAME_CUSTOMER +
@@ -104,7 +97,6 @@ public class Payment extends Procedure {
   private PreparedStatement payUpdateWhse = null;
   private PreparedStatement payUpdateDist = null;
   private PreparedStatement payGetCust = null;
-  private PreparedStatement payGetCustCdata = null;
   private PreparedStatement payUpdateCustBalCdata = null;
   private PreparedStatement payUpdateCustBal = null;
   private PreparedStatement payInsertHist = null;
@@ -117,7 +109,6 @@ public class Payment extends Procedure {
     payUpdateWhse = this.getPreparedStatement(conn, payUpdateWhseSQL);
     payUpdateDist = this.getPreparedStatement(conn, payUpdateDistSQL);
     payGetCust = this.getPreparedStatement(conn, payGetCustSQL);
-    payGetCustCdata = this.getPreparedStatement(conn, payGetCustCdataSQL);
     payUpdateCustBalCdata = this.getPreparedStatement(conn, payUpdateCustBalCdataSQL);
     payUpdateCustBal = this.getPreparedStatement(conn, payUpdateCustBalSQL);
     payInsertHist = this.getPreparedStatement(conn, payInsertHistSQL);
@@ -189,28 +180,15 @@ public class Payment extends Procedure {
     c.c_payment_cnt += 1;
     String c_data = null;
     if (c.c_credit.equals("BC")) { // bad credit
-      payGetCustCdata.setInt(1, customerWarehouseID);
-      payGetCustCdata.setInt(2, customerDistrictID);
-      payGetCustCdata.setInt(3, c.c_id);
-      rs = payGetCustCdata.executeQuery();
-      if (!rs.next())
-        throw new RuntimeException("C_ID=" + c.c_id + " C_W_ID=" + customerWarehouseID +
-                                   " C_D_ID=" + customerDistrictID + " not found!");
-      c_data = rs.getString("C_DATA");
-      rs.close();
-
-      c_data = c.c_id + " " + customerDistrictID + " " + customerWarehouseID + " " + districtID +
-               " " + w_id + " " + paymentAmount + " | " + c_data;
-      if (c_data.length() > 500)
-        c_data = c_data.substring(0, 500);
-
       payUpdateCustBalCdata.setDouble(1, c.c_balance);
       payUpdateCustBalCdata.setDouble(2, c.c_ytd_payment);
       payUpdateCustBalCdata.setInt(3, c.c_payment_cnt);
-      payUpdateCustBalCdata.setString(4, c_data);
-      payUpdateCustBalCdata.setInt(5, customerWarehouseID);
-      payUpdateCustBalCdata.setInt(6, customerDistrictID);
-      payUpdateCustBalCdata.setInt(7, c.c_id);
+      payUpdateCustBalCdata.setInt(4, districtID);
+      payUpdateCustBalCdata.setInt(5, w_id);
+      payUpdateCustBalCdata.setFloat(6, paymentAmount);
+      payUpdateCustBalCdata.setInt(7, customerWarehouseID);
+      payUpdateCustBalCdata.setInt(8, customerDistrictID);
+      payUpdateCustBalCdata.setInt(9, c.c_id);
       int result = payUpdateCustBalCdata.executeUpdate();
 
       if (result == 0)
