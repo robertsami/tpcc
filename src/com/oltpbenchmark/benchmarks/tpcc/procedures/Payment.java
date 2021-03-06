@@ -60,7 +60,7 @@ public class Payment extends Procedure {
       "   AND C_ID = ?");
 
   public SQLStmt payUpdateCustBalCdataSQL = new SQLStmt(
-      "UPDATE " + TPCCConstants.TABLENAME_CUSTOMER +
+      "UPDATE " + TPCCConstants.TABLENAME_CUSTOMER + " " +
       "SET C_BALANCE = ?, " +
       "    C_YTD_PAYMENT = ?, " +
       "    C_PAYMENT_CNT = ?, " +
