@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.oltpbenchmark.benchmarks.tpcc.TPCCConfig;
 import com.oltpbenchmark.benchmarks.tpcc.TPCCUtil;
+import com.oltpbenchmark.benchmarks.tpcc.procedures.NewOrder;
 import com.oltpbenchmark.benchmarks.tpcc.procedures.StockLevel;
 import com.zaxxer.hikari.HikariDataSource;
 
@@ -504,9 +505,10 @@ public class Worker implements Runnable {
             startConnection = System.nanoTime();
 
             conn = dataSource.getConnection();
-            if (next.getProcedureClass() != StockLevel.class) {
+            if (next.getProcedureClass() != StockLevel.class && next.getProcedureClass() != NewOrder.class) {
                 // In accordance with 2.8.2.3 of the TPCC spec, StockLevel should execute each query in its own Snapshot
                 // Isolation.
+                // TODO - Insert some comment about NewOrder
                 conn.setAutoCommit(false);
             }
             conn.setTransactionIsolation(this.wrkld.getIsolationMode());

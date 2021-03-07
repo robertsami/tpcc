@@ -30,12 +30,20 @@ import java.util.Random;
 
 import com.oltpbenchmark.api.Procedure;
 import com.oltpbenchmark.api.Worker;
+import com.oltpbenchmark.benchmarks.tpcc.pojo.Item;
 import org.apache.log4j.Logger;
 
 import com.oltpbenchmark.api.SQLStmt;
 import com.oltpbenchmark.benchmarks.tpcc.TPCCConstants;
 import com.oltpbenchmark.benchmarks.tpcc.TPCCUtil;
 import com.oltpbenchmark.benchmarks.tpcc.TPCCConfig;
+
+class ItemInfo {
+    public int id;
+    public float price;
+    public String name;
+    public String data;
+}
 
 public class NewOrder extends Procedure {
 
@@ -256,6 +264,11 @@ public class NewOrder extends Procedure {
     float ol_amount, total_amount;
 
     try {
+      // TODO - insert some comment about NewOrder and getting items separately
+      assert(conn.getAutoCommit());
+      Map<Integer, ItemInfo> itemInfoMap = getItemInfo(itemIDs, conn);
+      conn.setAutoCommit(false);
+
       stmtGetCust.setInt(1, w_id);
       stmtGetCust.setInt(2, d_id);
       stmtGetCust.setInt(3, c_id);
@@ -332,7 +345,7 @@ public class NewOrder extends Procedure {
                        itemIDs, supplierWarehouseIDs, orderQuantities,
                        i_price_arr, i_name_arr, i_data_arr,
                        s_qty_arr, s_data_arr, ol_dist_info_arr,
-                       ytd_arr, remote_cnt_arr, conn);
+                       ytd_arr, remote_cnt_arr, itemInfoMap, conn);
 
       if (w.getBenchmarkModule().getWorkloadConfiguration().getUseStoredProcedures()) {
         updateStockUsingProcedures(o_ol_cnt, w_id, itemIDs, supplierWarehouseIDs,
@@ -359,13 +372,41 @@ public class NewOrder extends Procedure {
     }
   }
 
+  Map<Integer, ItemInfo> getItemInfo(int[] itemIDs, Connection conn) throws  SQLException {
+    stmtGetItem = this.getPreparedStatement(conn, stmtGetItemSQLArr[itemIDs.length - 1]);
+    Map<Integer, ItemInfo> items = new HashMap<>();
+    for (int i = 0; i < itemIDs.length; ++i) {
+      stmtGetItem.setInt(i + 1, itemIDs[i]);
+    }
+    ResultSet rs = stmtGetItem.executeQuery();
+
+    for (int i = 0; i < itemIDs.length; ++i) {
+      if (!rs.next()) {
+        throw new UserAbortException("EXPECTED new order rollback: I_ID=" +
+                TPCCConfig.INVALID_ITEM_ID + "not found");
+      }
+      ItemInfo itemInfo = new ItemInfo();
+      int itemID = rs.getInt("I_ID");
+      assert (itemID == itemIDs[i]);
+      itemInfo.id = itemID;
+
+      itemInfo.price = rs.getFloat("I_PRICE");
+      itemInfo.name = rs.getString("I_NAME");
+      itemInfo.data = rs.getString("I_DATA");
+      items.put(itemID, itemInfo);
+    }
+
+    rs.close();
+    return items;
+  }
+
   // This function queries the ITEM and the STOCK table to get the information pertaining to the
   // items that are part of this order. The state is saved in the corresponding arrays.
   void getItemsAndStock(int o_ol_cnt, int w_id, int d_id,
                         int[] itemIDs, int[] supplierWarehouseIDs, int[] orderQuantities,
                         float[] i_price_arr, String[] i_name_arr, String[] i_data_arr,
                         int[] s_qty_arr, String[] s_data_arr, String[] ol_dist_info_arr,
-                        int[] ytd_arr, int[] remote_cnt_arr,
+                        int[] ytd_arr, int[] remote_cnt_arr, Map<Integer, ItemInfo> itemInfoMap,
                         Connection conn) throws  SQLException {
     Map<Integer, HashSet<Integer>> input = new HashMap<>();
     for (int i = 0; i < o_ol_cnt; ++i) {
@@ -378,16 +419,9 @@ public class NewOrder extends Procedure {
     }
 
     for (Map.Entry<Integer, HashSet<Integer>> entry : input.entrySet()) {
-      stmtGetItem = this.getPreparedStatement(conn, stmtGetItemSQLArr[entry.getValue().size() - 1]);
-      int k = 1;
-      for (int itemId : entry.getValue()) {
-        stmtGetItem.setInt(k++,  itemId);
-      }
-      ResultSet rs1 = stmtGetItem.executeQuery();
-
       stmtGetStock =
         this.getPreparedStatement(conn, stmtGetStockSQLArr[entry.getValue().size() - 1]);
-      k = 1;
+      int k = 1;
       stmtGetStock.setInt(k++, entry.getKey() /* supplier WH */);
       for (int itemId: entry.getValue()) {
         stmtGetStock.setInt(k++, itemId);
@@ -395,7 +429,7 @@ public class NewOrder extends Procedure {
       ResultSet rs2 = stmtGetStock.executeQuery();
 
       for (int expected: entry.getValue()) {
-        if (!rs1.next()) {
+        if (!itemInfoMap.containsKey(expected)) {
           throw new UserAbortException("EXPECTED new order rollback: I_ID=" +
                                        TPCCConfig.INVALID_ITEM_ID + "not found");
         }
@@ -404,14 +438,15 @@ public class NewOrder extends Procedure {
                                        TPCCConfig.INVALID_ITEM_ID + "not found");
         }
 
-        int itemId = rs1.getInt("I_ID");
+        ItemInfo itemInfo = itemInfoMap.get(expected);
+        int itemId = itemInfo.id;
         assert (itemId == expected);
         itemId = rs2.getInt("S_I_ID");
         assert (itemId == expected);
 
-        float price = rs1.getFloat("I_PRICE");
-        String name = rs1.getString("I_NAME");
-        String data = rs1.getString("I_DATA");
+        float price = itemInfo.price;
+        String name = itemInfo.name;
+        String data = itemInfo.data;
 
         int s_quantity = rs2.getInt("S_QUANTITY");
         String s_data = rs2.getString("S_DATA");
@@ -429,7 +464,6 @@ public class NewOrder extends Procedure {
                   s_qty_arr, s_data_arr, ol_dist_info_arr,
                   ytd_arr, remote_cnt_arr);
       }
-      rs1.close();
       rs2.close();
     }
   }
