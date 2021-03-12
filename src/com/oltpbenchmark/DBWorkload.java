@@ -524,7 +524,7 @@ public class DBWorkload {
     conn.commit();
     LOG.info("Latency: - " + (System.nanoTime() - startTime) * 0.0000010 );
     conn.close();
-    txn.getProcedureClass().getMethod("printLatencyStats").invoke(null);
+//    txn.getProcedureClass().getMethod("printLatencyStats").invoke(null);
   }
 
   private static void PrintToplineResults(List<Worker> workers, Results r) {
