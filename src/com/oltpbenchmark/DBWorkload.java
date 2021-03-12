@@ -514,11 +514,21 @@ public class DBWorkload {
     module.createDataSource();
     Worker w = new Worker(module, 1, warehouseID, lowerDistrictId, upperDistrictId);
     Connection conn = module.makeConnection();
-    TransactionType txn = module.initTransactionType(txnType, 1);
-    assert txn != null;
+
+    NewOrder no = new NewOrder();
+    Random r = new Random();
+    conn.setAutoCommit(false);
     long startTime = System.nanoTime();
-    w.executeWork(conn, txn);
-    LOG.info("Latency: - " + (System.nanoTime() - startTime) * 0.0000010 );
+    no.run(conn, r, warehouseID, numWarehouses, lowerDistrictId, upperDistrictId, w);
+    conn.commit();
+    LOG.info("Latency: - " + (System.nanoTime() - startTime) * 0.0000010);
+
+//
+//    TransactionType txn = module.initTransactionType(txnType, 1);
+//    assert txn != null;
+//    long startTime = System.nanoTime();
+//    w.executeWork(conn, txn);
+//    LOG.info("Latency: - " + (System.nanoTime() - startTime) * 0.0000010 );
     conn.close();
 //    txn.getProcedureClass().getMethod("printLatencyStats").invoke(null);
   }
