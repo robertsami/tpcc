@@ -18,10 +18,14 @@
 package com.oltpbenchmark;
 
 import java.io.*;
+import java.lang.reflect.InvocationTargetException;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.text.DecimalFormat;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import com.oltpbenchmark.api.*;
 import org.apache.commons.collections15.map.ListOrderedMap;
 import org.apache.commons.configuration.SubnodeConfiguration;
 import org.apache.commons.configuration.XMLConfiguration;
@@ -29,10 +33,6 @@ import org.apache.commons.configuration.tree.xpath.XPathExpressionEngine;
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
 
-import com.oltpbenchmark.api.BenchmarkModule;
-import com.oltpbenchmark.api.TransactionType;
-import com.oltpbenchmark.api.TransactionTypes;
-import com.oltpbenchmark.api.Worker;
 import com.oltpbenchmark.benchmarks.tpcc.procedures.*;
 import com.oltpbenchmark.jdbc.InstrumentedPreparedStatement;
 import com.oltpbenchmark.util.FileUtil;
@@ -379,6 +379,15 @@ public class DBWorkload {
       }
     }
 
+    if (options.getMode() == CommandLineOptions.Mode.RUN_ONE) {
+      String procName = options.getRunOneProc().orElseThrow(() -> new RuntimeException("Must specify --proc"));
+      Random r = new Random();
+      int wid = options.getRunOneWarehouse().orElse(r.nextInt(numWarehouses) + 1);
+      int lowerDistrictId = options.getRunDistrict().orElse(1);
+      int upperDistrictId = options.getRunDistrict().orElse(10);
+      runOne(benchList.get(0), procName, wid, numWarehouses, lowerDistrictId, upperDistrictId);
+    }
+
     // Execute Workload
     if (options.getMode() == CommandLineOptions.Mode.EXECUTE) {
       // Bombs away!
@@ -451,34 +460,6 @@ public class DBWorkload {
     rs.close();
   }
 
-  /* buggy piece of shit of Java XPath implementation made me do it
-     replaces good old [@bench="{plugin_name}", which doesn't work in Java XPath with lists
-   */
-  private static List<String> getWeights(String plugin, SubnodeConfiguration work) {
-
-    List<String> weight_strings = new LinkedList<>();
-    @SuppressWarnings("unchecked")
-    List<SubnodeConfiguration> weights = work.configurationsAt("weights");
-    boolean weights_started = false;
-
-    for (SubnodeConfiguration weight : weights) {
-      // stop if second attributed node encountered
-      if (weights_started && weight.getRootNode().getAttributeCount() > 0) {
-          break;
-      }
-      // start adding node values, if node with attribute equal to current
-      // plugin encountered
-      if (weight.getRootNode().getAttributeCount() > 0 &&
-          weight.getRootNode().getAttribute(0).getValue().equals(plugin)) {
-          weights_started = true;
-      }
-      if (weights_started) {
-          weight_strings.add(weight.getString(""));
-      }
-    }
-    return weight_strings;
-  }
-
   private static void runCreator(BenchmarkModule bench) {
     LOG.debug(String.format("Creating %s Database", bench));
     bench.createDatabase();
@@ -524,6 +505,26 @@ public class DBWorkload {
     }
 
     return r;
+  }
+
+  private static void runOne(
+        BenchmarkModule module, String txnType, int warehouseID, int numWarehouses, int lowerDistrictId,
+        int upperDistrictId) throws Exception {
+    InstrumentedPreparedStatement.trackLatencyMetrics(true);
+    module.createDataSource();
+    Worker w = new Worker(module, 1, warehouseID, lowerDistrictId, upperDistrictId);
+    TransactionType txn = module.initTransactionType(txnType, 1);
+    assert txn != null;
+    Procedure proc = w.getProcedure(txn.getProcedureClass());
+    Random r = new Random();
+    Connection conn = module.makeConnection();
+    conn.setAutoCommit(false);
+    long startTime = System.nanoTime();
+    proc.run(conn, r, warehouseID, numWarehouses, lowerDistrictId, upperDistrictId, w);
+    conn.commit();
+    LOG.info("Latency: - " + (System.nanoTime() - startTime) * 0.0000010 );
+    conn.close();
+    txn.getProcedureClass().getMethod("printLatencyStats").invoke(null);
   }
 
   private static void PrintToplineResults(List<Worker> workers, Results r) {

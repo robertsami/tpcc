@@ -104,6 +104,8 @@ public abstract class Procedure {
 
     public void test(Connection conn, Worker w) throws Exception {}
 
+    public static void printLatencyStats() {}
+
     /**
      * Thrown from a Procedure to indicate to the Worker
      * that the procedure should be aborted and rolled back.
