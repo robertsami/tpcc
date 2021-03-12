@@ -513,15 +513,11 @@ public class DBWorkload {
     InstrumentedPreparedStatement.trackLatencyMetrics(true);
     module.createDataSource();
     Worker w = new Worker(module, 1, warehouseID, lowerDistrictId, upperDistrictId);
+    Connection conn = module.makeConnection();
     TransactionType txn = module.initTransactionType(txnType, 1);
     assert txn != null;
-    Procedure proc = w.getProcedure(txn.getProcedureClass());
-    Random r = new Random();
-    Connection conn = module.makeConnection();
-    conn.setAutoCommit(false);
     long startTime = System.nanoTime();
-    proc.run(conn, r, warehouseID, numWarehouses, lowerDistrictId, upperDistrictId, w);
-    conn.commit();
+    w.executeWork(conn, txn);
     LOG.info("Latency: - " + (System.nanoTime() - startTime) * 0.0000010 );
     conn.close();
 //    txn.getProcedureClass().getMethod("printLatencyStats").invoke(null);
